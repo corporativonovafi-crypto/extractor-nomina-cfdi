@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Extractor de Nómina CFDI</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#12261c;
+    --paper:#eef1ea;
+    --ledger-green:#0f2a20;
+    --ledger-green-light:#173a2c;
+    --line:#2b5240;
+    --gold:#c99a3e;
+    --gold-bright:#e0b658;
+    --cream:#f4f1e6;
+    --red-stamp:#9c3b30;
+    --ok-green:#4f8f6d;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ledger-green);
+    color:var(--cream);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    background-image:
+      linear-gradient(var(--ledger-green-light) 1px, transparent 1px);
+    background-size: 100% 2.1em;
+    background-attachment:local;
+  }
+  .wrap{
+    max-width:1320px;
+    margin:0 auto;
+    padding:48px 28px 80px;
+  }
+
+  /* Header */
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    gap:24px;
+    border-bottom:2px solid var(--line);
+    padding-bottom:20px;
+    margin-bottom:36px;
+    flex-wrap:wrap;
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--gold-bright);
+    margin:0 0 8px;
+  }
+  h1{
+    font-family:'Lora',serif;
+    font-weight:700;
+    font-size:clamp(28px,4vw,40px);
+    margin:0;
+    color:var(--cream);
+    letter-spacing:-.01em;
+  }
+  header p{
+    max-width:380px;
+    font-size:14px;
+    line-height:1.55;
+    color:#c9d4ca;
+    margin:0;
+  }
+
+  /* Stamp badge */
+  .stamp{
+    width:92px;height:92px;
+    border:2.5px solid var(--gold);
+    border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+    transform:rotate(-8deg);
+    position:relative;
+  }
+  .stamp::before{
+    content:'';
+    position:absolute;inset:6px;
+    border:1px solid var(--gold);
+    border-radius:50%;
+  }
+  .stamp span{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:9px;
+    letter-spacing:.08em;
+    color:var(--gold-bright);
+    text-align:center;
+    line-height:1.5;
+    text-transform:uppercase;
+  }
+
+  /* Drop zone */
+  .dropzone{
+    border:2px dashed var(--line);
+    border-radius:4px;
+    padding:40px 24px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+    background:rgba(255,255,255,0.02);
+    position:relative;
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color:var(--gold);
+    background:rgba(201,154,62,0.06);
+  }
+  .dropzone .dz-title{
+    font-family:'Lora',serif;
+    font-size:19px;
+    font-weight:600;
+    margin:0 0 6px;
+    color:var(--cream);
+  }
+  .dropzone .dz-sub{
+    font-size:13px;
+    color:#9fb0a3;
+    margin:0;
+  }
+  .dropzone .dz-sub b{ color:var(--gold-bright); font-weight:600; }
+  input[type=file]{display:none;}
+
+  .toolbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    margin:28px 0 14px;
+    flex-wrap:wrap;
+  }
+  .count{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    color:#c9d4ca;
+  }
+  .count b{ color:var(--gold-bright); font-size:15px; }
+
+  .btn{
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:13.5px;
+    border:none;
+    border-radius:3px;
+    padding:11px 20px;
+    cursor:pointer;
+    letter-spacing:.01em;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    transition:transform .1s ease, box-shadow .15s ease;
+  }
+  .btn-primary{
+    background:var(--gold);
+    color:#1c1204;
+  }
+  .btn-primary:hover:not(:disabled){ background:var(--gold-bright); box-shadow:0 2px 14px rgba(201,154,62,.35);}
+  .btn-primary:disabled{ opacity:.35; cursor:not-allowed; }
+  .btn-ghost{
+    background:transparent;
+    border:1px solid var(--line);
+    color:#c9d4ca;
+  }
+  .btn-ghost:hover{ border-color:var(--gold); color:var(--gold-bright); }
+
+  /* Section labels above table groups */
+  .col-group-note{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:#9fb0a3;
+    margin:0 0 10px;
+  }
+  .col-group-note b{ color:var(--gold-bright); }
+
+  /* Table */
+  .ledger{
+    border:1px solid var(--line);
+    border-radius:4px;
+    overflow:hidden;
+    margin-top:4px;
+  }
+  .table-scroll{ overflow-x:auto; }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12.5px;
+    min-width:2500px;
+  }
+  thead th{
+    text-align:left;
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    color:var(--gold-bright);
+    background:rgba(255,255,255,0.03);
+    padding:12px 12px;
+    border-bottom:1px solid var(--line);
+    white-space:nowrap;
+    position:sticky;
+    top:0;
+  }
+  thead th.grp-percep{ background:rgba(79,143,109,0.10); }
+  thead th.grp-deduc{ background:rgba(156,59,48,0.10); }
+  tbody td{
+    padding:11px 12px;
+    border-bottom:1px solid rgba(43,82,64,0.5);
+    color:#dce6dd;
+    white-space:nowrap;
+  }
+  tbody tr:hover{ background:rgba(255,255,255,0.025); }
+  tbody tr.err td{ color:#e08b7f; }
+  td.num{ text-align:right; }
+  td.grp-percep{ background:rgba(79,143,109,0.045); }
+  td.grp-deduc{ background:rgba(156,59,48,0.045); }
+  .tag-err{
+    font-family:'Inter',sans-serif;
+    font-size:11px;
+    color:#e08b7f;
+    background:rgba(156,59,48,0.18);
+    border:1px solid rgba(156,59,48,0.5);
+    padding:2px 8px;
+    border-radius:10px;
+  }
+  .row-remove{
+    background:none;border:none;color:#7f9284;cursor:pointer;font-size:15px;
+    line-height:1;padding:2px 4px;
+  }
+  .row-remove:hover{ color:#e08b7f; }
+
+  .empty{
+    text-align:center;
+    padding:50px 20px;
+    color:#7f9284;
+    font-size:13.5px;
+    font-family:'Inter',sans-serif;
+  }
+
+  footer{
+    margin-top:40px;
+    padding-top:20px;
+    border-top:1px solid var(--line);
+    font-size:12px;
+    color:#7f9284;
+    font-family:'IBM Plex Mono',monospace;
+    display:flex;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+
+  @media (max-width:640px){
+    .wrap{padding:32px 16px 60px;}
+    header{flex-direction:column;align-items:flex-start;}
+    .stamp{display:none;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <p class="eyebrow">Complemento de Nómina · CFDI 3.3 / 4.0</p>
+      <h1>Extractor de Nómina</h1>
+      <p>Carga los XML timbrados de tu nómina y obtén un Excel con el desglose completo de percepciones y deducciones de cada recibo. Todo se procesa en tu navegador — ningún archivo se envía a un servidor.</p>
+    </div>
+    <div class="stamp"><span>Procesado<br>Local · SAT</span></div>
+  </header>
+
+  <div class="dropzone" id="dropzone">
+    <p class="dz-title">Arrastra tus archivos XML aquí</p>
+    <p class="dz-sub">o <b>haz clic para seleccionarlos</b> · puedes soltar varios timbres a la vez</p>
+    <input type="file" id="fileInput" accept=".xml" multiple>
+  </div>
+
+  <div class="toolbar">
+    <div class="count" id="countLabel"><b>0</b> recibos cargados</div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-ghost" id="clearBtn">Limpiar todo</button>
+      <button class="btn btn-primary" id="exportBtn" disabled>Exportar a Excel</button>
+    </div>
+  </div>
+
+  <p class="col-group-note"><b>Percepciones</b> en verde · <b>Deducciones</b> en rojo</p>
+
+  <div class="ledger">
+    <div class="table-scroll">
+      <table id="resultTable" style="display:none;">
+        <thead>
+          <tr>
+            <th></th>
+            <th>UUID</th>
+            <th>RFC Emisor</th>
+            <th>Emisor</th>
+            <th>RFC Receptor</th>
+            <th>Receptor</th>
+            <th>Puesto</th>
+            <th>Departamento</th>
+            <th>Periodicidad</th>
+            <th>F. Pago</th>
+            <th>F. Inicial</th>
+            <th>F. Final</th>
+            <th>Días Pag.</th>
+            <th class="num">Salario Diario Int.</th>
+            <th class="num grp-percep">Sueldos (001)</th>
+            <th class="num grp-percep">Aguinaldo Grav. (002)</th>
+            <th class="num grp-percep">Aguinaldo Exento (002)</th>
+            <th class="num grp-percep">Prima Vac. Grav. (021)</th>
+            <th class="num grp-percep">Prima Vac. Exenta (021)</th>
+            <th class="num grp-percep">Vacaciones</th>
+            <th class="num grp-percep">Bonos</th>
+            <th class="num grp-percep">Comisiones (028)</th>
+            <th class="num grp-percep">Subsidio Empleo</th>
+            <th class="num grp-percep">H. Extra Gravadas</th>
+            <th class="num grp-percep">H. Extra Exentas</th>
+            <th class="num grp-percep">Otras Percep. Grav.</th>
+            <th class="num grp-percep">Otras Percep. Exentas</th>
+            <th class="num grp-percep">Total Percepciones</th>
+            <th class="num grp-deduc">IMSS (001)</th>
+            <th class="num grp-deduc">ISR (002)</th>
+            <th class="num grp-deduc">INFONAVIT</th>
+            <th class="num grp-deduc">FONACOT (011)</th>
+            <th class="num grp-deduc">Caja Ahorro (018)</th>
+            <th class="num grp-deduc">Otras Deducciones</th>
+            <th class="num grp-deduc">Total Deducciones</th>
+            <th class="num">Total Otros Pagos</th>
+            <th class="num">Neto Pagado</th>
+          </tr>
+        </thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+      <div class="empty" id="emptyState">Aún no has cargado ningún recibo de nómina.</div>
+    </div>
+  </div>
+
+  <footer>
+    <span>Compatible con Nómina 1.1 y 1.2 · CFDI 3.3 y 4.0</span>
+    <span>Procesamiento 100% local en el navegador</span>
+  </footer>
+
+</div>
+
+<script>
+const NS = {
+  cfdi3: 'http://www.sat.gob.mx/cfd/3',
+  cfdi4: 'http://www.sat.gob.mx/cfd/4',
+  nomina11: 'http://www.sat.gob.mx/nomina',
+  nomina12: 'http://www.sat.gob.mx/nomina12',
+  tfd: 'http://www.sat.gob.mx/TimbreFiscalDigital'
+};
+
+let records = []; // {ok, fileName, data, error}
+
+function firstByNS(doc, namespaces, localName){
+  for(const ns of namespaces){
+    const els = doc.getElementsByTagNameNS(ns, localName);
+    if(els.length) return els[0];
+  }
+  return null;
+}
+function allByNS(doc, namespaces, localName){
+  for(const ns of namespaces){
+    const els = doc.getElementsByTagNameNS(ns, localName);
+    if(els.length) return Array.from(els);
+  }
+  return [];
+}
+function attr(el, name, fallback=''){
+  if(!el) return fallback;
+  const v = el.getAttribute(name);
+  return (v===null||v===undefined) ? fallback : v;
+}
+function num(v){
+  const n = parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
+function money(n){
+  return n.toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function parseNominaXML(text, fileName){
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(text, 'application/xml');
+  const parseErr = doc.getElementsByTagName('parsererror');
+  if(parseErr.length){
+    return {ok:false, fileName, error:'XML inválido o mal formado'};
+  }
+
+  const comprobante = firstByNS(doc, [NS.cfdi4, NS.cfdi3], 'Comprobante');
+  if(!comprobante){
+    return {ok:false, fileName, error:'No es un CFDI válido (no se encontró cfdi:Comprobante)'};
+  }
+
+  const nomina = firstByNS(doc, [NS.nomina12, NS.nomina11], 'Nomina');
+  if(!nomina){
+    return {ok:false, fileName, error:'No contiene el complemento de Nómina'};
+  }
+
+  const emisorCfdi = firstByNS(doc, [NS.cfdi4, NS.cfdi3], 'Emisor');
+  const receptorCfdi = firstByNS(doc, [NS.cfdi4, NS.cfdi3], 'Receptor');
+  const receptorNomina = firstByNS(doc, [NS.nomina12, NS.nomina11], 'Receptor');
+  const timbre = firstByNS(doc, [NS.tfd], 'TimbreFiscalDigital');
+  const percepcionItems = allByNS(doc, [NS.nomina12, NS.nomina11], 'Percepcion');
+  const deduccionItems = allByNS(doc, [NS.nomina12, NS.nomina11], 'Deduccion');
+  const otroPagoItems = allByNS(doc, [NS.nomina12, NS.nomina11], 'OtroPago');
+
+  // --- Percepciones desglosadas ---
+  // El catálogo SAT c_TipoPercepcion no trae una clave dedicada para "Bonos" o
+  // "Vacaciones": los emisores normalmente las timbran bajo clave 038 (Otros
+  // ingresos) o similar, identificables solo por el texto del Concepto. Por
+  // eso, además de clasificar por clave, se revisa el Concepto como respaldo,
+  // y cualquier remanente cae en "Otras Percepciones" para que la suma de
+  // columnas siempre cuadre con el Total de Percepciones del timbre.
+  let sueldosTotal = 0;          // clave 001
+  let aguinaldoGravado = 0;      // clave 002
+  let aguinaldoExento = 0;       // clave 002
+  let primaVacGravada = 0;       // clave 021
+  let primaVacExenta = 0;        // clave 021
+  let vacaciones = 0;            // por Concepto (sin clave dedicada)
+  let bonos = 0;                 // por Concepto (sin clave dedicada)
+  let comisiones = 0;            // clave 028
+  let horasExtraGravadas = 0;    // clave 019
+  let horasExtraExentas = 0;     // clave 019
+  let otrasPercepGravadas = 0;   // remanente
+  let otrasPercepExentas = 0;    // remanente
+
+  function normalizeText(s){
+    return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  }
+
+  percepcionItems.forEach(p=>{
+    const clave = attr(p,'TipoPercepcion') || attr(p,'Clave');
+    const concepto = normalizeText(attr(p,'Concepto'));
+    const gravado = num(attr(p,'ImporteGravado'));
+    const exento = num(attr(p,'ImporteExento'));
+
+    if(clave === '001'){
+      sueldosTotal += gravado + exento;
+    } else if(clave === '002'){
+      aguinaldoGravado += gravado;
+      aguinaldoExento += exento;
+    } else if(clave === '021'){
+      primaVacGravada += gravado;
+      primaVacExenta += exento;
+    } else if(clave === '028'){
+      comisiones += gravado + exento;
+    } else if(clave === '019'){
+      horasExtraGravadas += gravado;
+      horasExtraExentas += exento;
+    } else if(concepto.includes('bono')){
+      bonos += gravado + exento;
+    } else if(concepto.includes('vacacion')){
+      vacaciones += gravado + exento;
+    } else {
+      otrasPercepGravadas += gravado;
+      otrasPercepExentas += exento;
+    }
+  });
+
+  // Subsidio para el empleo: nodo OtroPago con TipoOtroPago = "002"
+  let subsidioEmpleo = 0;
+  otroPagoItems.forEach(o=>{
+    const clave = attr(o,'TipoOtroPago') || attr(o,'Clave');
+    if(clave === '002'){
+      subsidioEmpleo += num(attr(o,'Importe'));
+    }
+  });
+
+  // --- Deducciones desglosadas ---
+  let imss = 0;         // clave 001
+  let isr = 0;           // clave 002
+  let infonavit = 0;     // claves 005, 009, 010
+  let fonacot = 0;       // clave 011
+  let cajaAhorro = 0;    // clave 018
+  let otrasDeducciones = 0;
+
+  deduccionItems.forEach(d=>{
+    const clave = attr(d,'TipoDeduccion') || attr(d,'Clave');
+    const importe = num(attr(d,'Importe'));
+    if(clave === '001'){ imss += importe; }
+    else if(clave === '002'){ isr += importe; }
+    else if(clave === '005' || clave === '009' || clave === '010'){ infonavit += importe; }
+    else if(clave === '011'){ fonacot += importe; }
+    else if(clave === '018'){ cajaAhorro += importe; }
+    else { otrasDeducciones += importe; }
+  });
+
+  const totalPercepciones = num(attr(nomina,'TotalPercepciones'));
+  const totalDeducciones = num(attr(nomina,'TotalDeducciones'));
+  const totalOtrosPagos = num(attr(nomina,'TotalOtrosPagos'));
+  const netoPagado = totalPercepciones - totalDeducciones + totalOtrosPagos;
+
+  const data = {
+    fileName,
+    uuid: attr(timbre,'UUID'),
+    rfcEmisor: attr(emisorCfdi,'Rfc'),
+    nombreEmisor: attr(emisorCfdi,'Nombre'),
+    rfcReceptor: attr(receptorCfdi,'Rfc'),
+    nombreReceptor: attr(receptorCfdi,'Nombre'),
+    puesto: attr(receptorNomina,'Puesto'),
+    departamento: attr(receptorNomina,'Departamento'),
+    periodicidad: attr(receptorNomina,'PeriodicidadPago'),
+    fechaPago: attr(nomina,'FechaPago'),
+    fechaInicial: attr(nomina,'FechaInicialPago'),
+    fechaFinal: attr(nomina,'FechaFinalPago'),
+    diasPagados: attr(nomina,'NumDiasPagados'),
+    salarioDiarioIntegrado: num(attr(receptorNomina,'SalarioDiarioIntegrado')),
+    sueldosTotal,
+    aguinaldoGravado,
+    aguinaldoExento,
+    primaVacGravada,
+    primaVacExenta,
+    vacaciones,
+    bonos,
+    comisiones,
+    subsidioEmpleo,
+    horasExtraGravadas,
+    horasExtraExentas,
+    otrasPercepGravadas,
+    otrasPercepExentas,
+    totalPercepciones,
+    imss,
+    isr,
+    infonavit,
+    fonacot,
+    cajaAhorro,
+    otrasDeducciones,
+    totalDeducciones,
+    totalOtrosPagos,
+    netoPagado
+  };
+
+  return {ok:true, fileName, data};
+}
+
+function render(){
+  const table = document.getElementById('resultTable');
+  const body = document.getElementById('resultBody');
+  const empty = document.getElementById('emptyState');
+  const countLabel = document.getElementById('countLabel');
+  const exportBtn = document.getElementById('exportBtn');
+
+  countLabel.innerHTML = `<b>${records.length}</b> recibo${records.length===1?'':'s'} cargado${records.length===1?'':'s'}`;
+  exportBtn.disabled = records.filter(r=>r.ok).length === 0;
+
+  if(records.length === 0){
+    table.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  table.style.display = 'table';
+  empty.style.display = 'none';
+
+  body.innerHTML = records.map((r, i) => {
+    if(!r.ok){
+      return `<tr class="err">
+        <td><button class="row-remove" onclick="removeRow(${i})">&times;</button></td>
+        <td colspan="36"><span class="tag-err">${escapeHtml(r.fileName)}: ${escapeHtml(r.error)}</span></td>
+      </tr>`;
+    }
+    const d = r.data;
+    return `<tr>
+      <td><button class="row-remove" onclick="removeRow(${i})">&times;</button></td>
+      <td>${escapeHtml(d.uuid)}</td>
+      <td>${escapeHtml(d.rfcEmisor)}</td>
+      <td>${escapeHtml(d.nombreEmisor)}</td>
+      <td>${escapeHtml(d.rfcReceptor)}</td>
+      <td>${escapeHtml(d.nombreReceptor)}</td>
+      <td>${escapeHtml(d.puesto)}</td>
+      <td>${escapeHtml(d.departamento)}</td>
+      <td>${escapeHtml(d.periodicidad)}</td>
+      <td>${escapeHtml(d.fechaPago)}</td>
+      <td>${escapeHtml(d.fechaInicial)}</td>
+      <td>${escapeHtml(d.fechaFinal)}</td>
+      <td>${escapeHtml(d.diasPagados)}</td>
+      <td class="num">$${money(d.salarioDiarioIntegrado)}</td>
+      <td class="num grp-percep">$${money(d.sueldosTotal)}</td>
+      <td class="num grp-percep">$${money(d.aguinaldoGravado)}</td>
+      <td class="num grp-percep">$${money(d.aguinaldoExento)}</td>
+      <td class="num grp-percep">$${money(d.primaVacGravada)}</td>
+      <td class="num grp-percep">$${money(d.primaVacExenta)}</td>
+      <td class="num grp-percep">$${money(d.vacaciones)}</td>
+      <td class="num grp-percep">$${money(d.bonos)}</td>
+      <td class="num grp-percep">$${money(d.comisiones)}</td>
+      <td class="num grp-percep">$${money(d.subsidioEmpleo)}</td>
+      <td class="num grp-percep">$${money(d.horasExtraGravadas)}</td>
+      <td class="num grp-percep">$${money(d.horasExtraExentas)}</td>
+      <td class="num grp-percep">$${money(d.otrasPercepGravadas)}</td>
+      <td class="num grp-percep">$${money(d.otrasPercepExentas)}</td>
+      <td class="num grp-percep">$${money(d.totalPercepciones)}</td>
+      <td class="num grp-deduc">$${money(d.imss)}</td>
+      <td class="num grp-deduc">$${money(d.isr)}</td>
+      <td class="num grp-deduc">$${money(d.infonavit)}</td>
+      <td class="num grp-deduc">$${money(d.fonacot)}</td>
+      <td class="num grp-deduc">$${money(d.cajaAhorro)}</td>
+      <td class="num grp-deduc">$${money(d.otrasDeducciones)}</td>
+      <td class="num grp-deduc">$${money(d.totalDeducciones)}</td>
+      <td class="num">$${money(d.totalOtrosPagos)}</td>
+      <td class="num">$${money(d.netoPagado)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function escapeHtml(v){
+  if(v===undefined || v===null) return '';
+  return String(v).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+window.removeRow = function(i){
+  records.splice(i,1);
+  render();
+};
+
+async function handleFiles(fileList){
+  const files = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith('.xml'));
+  for(const file of files){
+    try{
+      const text = await file.text();
+      const result = parseNominaXML(text, file.name);
+      records.push(result);
+    }catch(e){
+      records.push({ok:false, fileName:file.name, error:'No se pudo leer el archivo'});
+    }
+  }
+  render();
+}
+
+// Drag & drop wiring
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+
+dropzone.addEventListener('click', ()=> fileInput.click());
+fileInput.addEventListener('change', (e)=> handleFiles(e.target.files));
+
+['dragenter','dragover'].forEach(evt=>{
+  dropzone.addEventListener(evt, (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    dropzone.classList.add('drag');
+  });
+});
+['dragleave','drop'].forEach(evt=>{
+  dropzone.addEventListener(evt, (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    dropzone.classList.remove('drag');
+  });
+});
+dropzone.addEventListener('drop', (e)=>{
+  const dt = e.dataTransfer;
+  if(dt && dt.files) handleFiles(dt.files);
+});
+
+document.getElementById('clearBtn').addEventListener('click', ()=>{
+  records = [];
+  fileInput.value = '';
+  render();
+});
+
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const ok = records.filter(r=>r.ok).map(r=>r.data);
+  if(ok.length === 0) return;
+
+  const rows = ok.map(d => ({
+    'UUID': d.uuid,
+    'RFC Emisor': d.rfcEmisor,
+    'Nombre Emisor': d.nombreEmisor,
+    'RFC Receptor': d.rfcReceptor,
+    'Nombre Receptor': d.nombreReceptor,
+    'Puesto': d.puesto,
+    'Departamento': d.departamento,
+    'Periodicidad Pago': d.periodicidad,
+    'Fecha Pago': d.fechaPago,
+    'Fecha Inicial Periodo': d.fechaInicial,
+    'Fecha Final Periodo': d.fechaFinal,
+    'Días Pagados': d.diasPagados,
+    'Salario Diario Integrado': d.salarioDiarioIntegrado,
+    'Sueldos y Salarios (001)': d.sueldosTotal,
+    'Aguinaldo Gravado (002)': d.aguinaldoGravado,
+    'Aguinaldo Exento (002)': d.aguinaldoExento,
+    'Prima Vacacional Gravada (021)': d.primaVacGravada,
+    'Prima Vacacional Exenta (021)': d.primaVacExenta,
+    'Vacaciones': d.vacaciones,
+    'Bonos': d.bonos,
+    'Comisiones (028)': d.comisiones,
+    'Subsidio para el Empleo': d.subsidioEmpleo,
+    'Horas Extra Gravadas (019)': d.horasExtraGravadas,
+    'Horas Extra Exentas (019)': d.horasExtraExentas,
+    'Otras Percepciones Gravadas': d.otrasPercepGravadas,
+    'Otras Percepciones Exentas': d.otrasPercepExentas,
+    'Total Percepciones': d.totalPercepciones,
+    'IMSS (001)': d.imss,
+    'ISR (002)': d.isr,
+    'INFONAVIT (005/009/010)': d.infonavit,
+    'FONACOT (011)': d.fonacot,
+    'Caja de Ahorro (018)': d.cajaAhorro,
+    'Otras Deducciones': d.otrasDeducciones,
+    'Total Deducciones': d.totalDeducciones,
+    'Total Otros Pagos': d.totalOtrosPagos,
+    'Neto Pagado': d.netoPagado
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = Array(Object.keys(rows[0] || {}).length).fill({wch:17});
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sueldos y Salarios');
+
+  const today = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `nomina_sueldos_salarios_${today}.xlsx`);
+});
+
+render();
+</script>
+</body>
+</html>
