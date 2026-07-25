@@ -362,6 +362,41 @@ const NS = {
 
 let records = []; // {ok, fileName, data, error}
 
+// Tarifa mensual de ISR 2026 (Art. 96 LISR): [límite inferior, límite superior, cuota fija, % excedente]
+const ISR_TABLA_MENSUAL_2026 = [
+  [0.01,        844.59,       0,         1.92],
+  [844.60,      7168.51,      16.22,     6.40],
+  [7168.52,     12598.02,     420.95,    10.88],
+  [12598.03,    14644.64,     1011.68,   16.00],
+  [14644.65,    17533.64,     1339.14,   17.92],
+  [17533.65,    35362.83,     1856.84,   21.36],
+  [35362.84,    55736.68,     5665.16,   23.52],
+  [55736.69,    106410.50,    10457.09,  30.00],
+  [106410.51,   141880.66,    25659.23,  32.00],
+  [141880.67,   425641.99,    37009.69,  34.00],
+  [425642.00,   Infinity,     133488.54, 35.00]
+];
+
+// Escala la tarifa mensual x número de meses equivalentes (para periodos irregulares,
+// p.ej. varias quincenas que en conjunto cubren N meses) y determina el ISR correspondiente.
+function calcularISR(baseGravable, meses){
+  if(!(meses > 0) || !(baseGravable >= 0)) return null;
+  for(const [limInf, limSup, cuotaFija, pct] of ISR_TABLA_MENSUAL_2026){
+    const limInfEsc = limInf * meses;
+    const limSupEsc = (limSup === Infinity) ? Infinity : limSup * meses;
+    if(baseGravable >= limInfEsc && baseGravable <= limSupEsc){
+      const cuotaFijaEsc = cuotaFija * meses;
+      const excedente = baseGravable - limInfEsc;
+      const impuestoMarginal = excedente * (pct / 100);
+      return {
+        limInf: limInfEsc, limSup: limSupEsc, cuotaFija: cuotaFijaEsc,
+        pct, excedente, impuestoMarginal, isr: cuotaFijaEsc + impuestoMarginal
+      };
+    }
+  }
+  return null;
+}
+
 function firstByNS(doc, namespaces, localName){
   for(const ns of namespaces){
     const els = doc.getElementsByTagNameNS(ns, localName);
@@ -666,6 +701,91 @@ document.getElementById('clearBtn').addEventListener('click', ()=>{
   render();
 });
 
+function buildResumenSheet(ok){
+  // --- Sumas de ingresos gravados / exentos de todos los CFDI cargados ---
+  const sum = key => ok.reduce((acc,d)=> acc + (d[key]||0), 0);
+
+  const gravados = [
+    ['Sueldos y Salarios (001)', sum('sueldosTotal')],
+    ['Aguinaldo Gravado (002)', sum('aguinaldoGravado')],
+    ['Prima Vacacional Gravada (021)', sum('primaVacGravada')],
+    ['Vacaciones', sum('vacaciones')],
+    ['Bonos', sum('bonos')],
+    ['Comisiones (028)', sum('comisiones')],
+    ['Horas Extra Gravadas (019)', sum('horasExtraGravadas')],
+    ['Otras Percepciones Gravadas', sum('otrasPercepGravadas')]
+  ].filter(([,v]) => Math.abs(v) > 0.004);
+
+  const exentos = [
+    ['Aguinaldo Exento (002)', sum('aguinaldoExento')],
+    ['Prima Vacacional Exenta (021)', sum('primaVacExenta')],
+    ['Horas Extra Exentas (019)', sum('horasExtraExentas')],
+    ['Otras Percepciones Exentas', sum('otrasPercepExentas')]
+  ].filter(([,v]) => Math.abs(v) > 0.004);
+
+  const totalGravado = gravados.reduce((a,[,v])=>a+v, 0);
+  const totalExento = exentos.reduce((a,[,v])=>a+v, 0);
+  const totalSubsidio = sum('subsidioEmpleo');
+  const totalIsrRetenido = sum('isr');
+  const totalDiasPagados = ok.reduce((a,d)=> a + (parseFloat(d.diasPagados)||0), 0);
+  const mesesEquivalentes = totalDiasPagados / 30;
+
+  const isrCalc = calcularISR(totalGravado, mesesEquivalentes);
+
+  const aoa = [
+    ['RESUMEN DE INGRESOS Y CÁLCULO DE ISR'],
+    [],
+    ['Recibos (CFDI) considerados', ok.length],
+    ['Suma de días pagados (todos los recibos)', totalDiasPagados],
+    ['Meses equivalentes (días pagados / 30)', mesesEquivalentes],
+    [],
+    ['INGRESOS GRAVADOS', 'Importe'],
+    ...gravados,
+    ['Total Ingresos Gravados', totalGravado],
+    [],
+    ['INGRESOS EXENTOS', 'Importe'],
+    ...(exentos.length ? exentos : [['(sin ingresos exentos en los recibos cargados)', 0]]),
+    ['Total Ingresos Exentos', totalExento],
+    [],
+    ['Total de Ingresos (Gravados + Exentos)', totalGravado + totalExento],
+    [],
+  ];
+
+  if(isrCalc){
+    aoa.push(
+      ['CÁLCULO DE ISR — Tarifa mensual 2026 x ' + mesesEquivalentes.toFixed(4) + ' mes(es) equivalente(s)'],
+      ['Límite inferior aplicado', isrCalc.limInf],
+      ['Límite superior aplicado', isrCalc.limSup === Infinity ? 'En adelante' : isrCalc.limSup],
+      ['Cuota fija aplicada', isrCalc.cuotaFija],
+      ['% sobre excedente del límite inferior', isrCalc.pct + '%'],
+      ['Base gravable (Total Ingresos Gravados)', totalGravado],
+      ['Excedente del límite inferior', isrCalc.excedente],
+      ['Impuesto marginal (excedente x %)', isrCalc.impuestoMarginal],
+      ['ISR determinado', isrCalc.isr],
+      [],
+      ['Subsidio para el empleo (según CFDI)', totalSubsidio],
+      ['ISR retenido según CFDI', totalIsrRetenido],
+      ['ISR a cargo / (a favor)', isrCalc.isr - totalSubsidio - totalIsrRetenido],
+      []
+    );
+  } else {
+    aoa.push(
+      ['CÁLCULO DE ISR'],
+      ['No fue posible calcular el ISR (revisa que los recibos tengan Días Pagados y percepciones gravadas).'],
+      []
+    );
+  }
+
+  aoa.push(
+    ['* Sueldos, Vacaciones, Bonos y Comisiones se consideran 100% gravados: el complemento de nómina no desglosa una parte exenta para estos conceptos.'],
+    ['* Cálculo de referencia con la tarifa mensual escalada por meses equivalentes. Verifica el tratamiento fiscal aplicable con tu contador.']
+  );
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:52},{wch:18}];
+  return ws;
+}
+
 document.getElementById('exportBtn').addEventListener('click', ()=>{
   const ok = records.filter(r=>r.ok).map(r=>r.data);
   if(ok.length === 0) return;
@@ -711,7 +831,11 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
 
   const ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = Array(Object.keys(rows[0] || {}).length).fill({wch:17});
+
+  const wsResumen = buildResumenSheet(ok);
+
   const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen ISR');
   XLSX.utils.book_append_sheet(wb, ws, 'Sueldos y Salarios');
 
   const today = new Date().toISOString().slice(0,10);
